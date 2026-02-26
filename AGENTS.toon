@@ -1,0 +1,133 @@
+title: "AGENTS.toon - ProcessWire AI Workflow Development Guide"
+
+project:
+  name: ProcessWire AI Workflow
+  type: CMS/DDEV
+  php: 8.4
+
+structure:
+  - .ddev/
+  - site/
+  - - assets/         # Uploaded files, cache
+  - - classes/        # Page classes
+  - - config.php      # Site config
+  - - modules/        # Custom modules
+  - - templates/      # Template files
+  - wire/             # ProcessWire 3.0.256
+  - composer.json
+  - index.php
+
+ddev:
+  - ddev start
+  - ddev stop
+  - ddev logs
+  - ddev ssh
+  - ddev php -l file.php
+  - ddev import-db --file=dump.sql
+  - ddev export-db --file=dump.sql
+
+commands:
+  lint:
+    - php -l site/modules/Module/Module.module.php      # Single file
+    - find site -name "*.php" -exec php -l {} \;         # Recursive
+    - ddev php -l site/config.php                        # Via DDEV
+  composer: ddev composer install | update              # Via DDEV only
+
+style:
+  naming:
+    classes: PascalCase          # RockDevTools
+    methods: camelCase           # getModuleConfigInputfields
+    properties: camelCase        # $debugAssetTools
+    constants: UPPER_SNAKE_CASE
+    files: Match class name      # RockDevTools.module.php
+    hooks: Prefix HookAfter/HookBefore
+  formatting:
+    - 2 spaces indentation
+    - Brace on same line for classes/functions
+    - Max 120 chars/line
+    - Single quotes unless interpolating
+    - Concatenation: 'string ' . $var . ' more'
+  types:
+    - declare(strict_types=1)
+    - Return types: public function init(): void
+    - Typed properties: public string $name = '';
+    - Union types: public string|int $value
+    - Nullable: ?string $param = null
+  error_handling:
+    - try/catch for exceptions
+    - $this->error() for user errors
+    - $this->log() for logging
+    - Early returns, null coalescing: $input ?? $default
+  patterns:
+    modules: Extend WireData or Module, implement ConfigurableModule
+    page_classes: Create in site/classes/ matching template names
+    hooks: $this->addHookAfter() / $this->addHookBefore()
+    api_vars: $pages, $templates, $fields, $users
+  documentation:
+    - @param, @return, @var in docblocks
+    - @author and @license in module headers
+
+modules:
+  3rd_party:
+    - AutocompleteModuleClassName
+    - AutoTemplateStubs
+    - CronjobDatabaseBackup
+    - ProcessDatabaseBackup
+    - RockDevTools
+    - RockMigrations
+  core_enabled:
+    - Select Options
+    - Repeater
+    - Page Auto Complete
+    - Lazy Cron
+    - Page Path History
+    - Page Clone
+    - Markdown/Parsedown Extra
+
+skills[2]:
+  local:
+    path: .agents/skills/
+    processwire[15]:
+      - api
+      - fields
+      - field-configuration
+      - modules
+      - advanced-modules
+      - hooks
+      - templates
+      - custom-page-classes
+      - selectors
+      - user-access
+      - security
+      - multi-language
+      - rockmigrations
+      - getting-started
+      - best-practices
+    general[4]:
+      - git/commit-generator
+      - markdown/alerts
+      - general/prompt-rephraser
+      - general/prompt-optimizer
+  global:
+    path: ~/.agents/skills/
+    - php-pro
+    - htmx
+    - tailwindcss-advanced-layouts
+    - twig-guide
+    - git-commit
+
+usage:
+  ai: skill name="processwire/api"
+  human: Read .agents/skills/*/SKILL.md
+
+compat[3]{tool,usage}:
+  opencode,All skills
+  Cursor,Local skills
+  Copilot,"Reference in .github/copilot-instructions.md"
+
+resources[5]:
+  - https://processwire.com/docs/
+  - https://processwire.com/api/coding-style-guide/
+  - https://processwire.com/api/wire-methods/
+  - https://github.com/baumrock/RockMigrations
+  - https://github.com/baumrock/RockDevTools

@@ -1,0 +1,232 @@
+# Assets
+
+The module can be used to easily minify or merge JS, LESS and CSS assets of a site or a module.
+
+## Site Assets
+
+To minify/merge site assets you can put something likethis in your '/site/templates/_init.php' file:
+
+```php
+<?php
+// make sure you have set the ProcessWire namespace at the top of the file!
+namespace ProcessWire;
+
+if ($config->rockdevtools) {
+  $devtools = rockdevtools();
+
+  // force recreating of minified files on every request
+  // $devtools->debug = true;
+
+  // parse all less files to css
+  $devtools->assets()
+    ->less()
+    ->add('/site/templates/uikit/src/less/uikit.theme.less')
+    ->add('/site/templates/src/*.less')
+    ->save('/site/templates/src/.styles.css');
+
+  // merge and minify css files
+  $devtools->assets()
+    ->css()
+    ->add('/site/templates/src/.styles.css')
+    ->add('/site/templates/src/.tailwind.css')
+    ->save('/site/templates/dst/styles.min.css');
+
+  // merge and minify JS files
+  $devtools->assets()
+    ->js()
+    ->add('/site/templates/uikit/dist/js/uikit.min.js')
+    ->add('/site/templates/scripts/main.js')
+    ->save('/site/templates/dst/scripts.min.js');
+}
+```
+
+In your main markup file you can include those minified files like this:
+
+```latte
+{rockfrontend()->styleTag('/site/templates/dst/styles.min.css')|noescape}
+{rockfrontend()->scriptTag('/site/templates/dst/scripts.min.js', 'defer')|noescape}
+```
+
+Which will output something like this:
+
+```html
+<link rel="stylesheet" href="/site/templates/dst/styles.min.css?akd84" />
+<script src="/site/templates/dst/scripts.min.js?vur4s" defer></script>
+```
+
+Note that we are automatically adding a cache busting string to the URL to make sure that the browser always fetches the latest version of the file and does not use a cached version, which can be a problem when working on development machines as you might see an outdated version of the file.
+
+## add()
+
+Add a file to the FilenameArray. This method is versatile and supports both individual files and glob patterns:
+
+```php
+// Add a single file
+$array->add('/site/templates/styles.css');
+
+// Add multiple files using a glob pattern
+// This will add all files in the /site/templates/ directory (not recursively)
+$array->add('/site/templates/*.css');
+
+// Add files recursively using **
+// This will add all files in the /site/templates/ directory and its subdirectories (default depth 3)
+$array->add(
+  // pattern
+  '/site/templates/**.css',
+  // depth
+  5,
+);
+```
+
+### Features
+
+- Supports individual files and glob patterns
+- Automatically handles recursive file matching with `**` pattern
+- Ensures paths are properly formatted within the ProcessWire root
+- Returns `$this` for method chaining
+- If a glob pattern is detected (contains `*`), it automatically uses `addAll()` internally
+
+## Custom Root Path
+
+The `setRoot()` method on the `Assets` class allows you to customize the root folder for all path operations of that Assets object. This is particularly useful when you want to work with assets that are located outside of the ProcessWire root directory.
+
+Once you set a custom root, all subsequent path operations will be relative to that root.
+
+You might need this feature in scenarios like:
+
+- **Multi-level project structure**: When ProcessWire is in `/var/www/html/public` but your source assets are in `/var/www/html/src` (one level above public)
+- **Shared assets**: When you have assets shared between multiple projects or modules
+- **Build tools integration**: When working with external build tools that expect assets in specific locations
+
+### Basic Usage
+
+You can set a custom root path in two ways:
+
+#### Method 1: Using setRoot() method
+```php
+$devtools->assets()
+  // Set root to one level above ProcessWire root
+  ->setRoot('../')
+  ->less()
+  ->add('/src/styles/main.less')
+  ->save('/public/dst/styles.min.css');
+```
+
+#### Method 2: Using the constructor
+```php
+// Set root to one level above ProcessWire root
+$devtools->assets('../')
+  ->less()
+  ->add('/src/styles/main.less')
+  ->save('/public/dst/styles.min.css');
+```
+
+### Example
+
+```php
+// If ProcessWire is in /var/www/html/public
+// and your assets are in /var/www/html/src
+$devtools->assets()
+  ->setRoot('../')
+  ->less()
+  ->add('/src/uikit/src/less/uikit.theme.less')
+  ->add('/src/less/**.less')
+  ->save('/public/dst/uikit.min.css');
+```
+
+### Path Resolution
+
+The `setRoot()` method automatically handles path normalization:
+
+- **Relative paths**: `../` is automatically converted to the parent directory of ProcessWire root
+- **Absolute paths**: Full paths are used as-is
+- **Path normalization**: All paths are normalized to use forward slashes
+- **Trailing slashes**: Automatically added to ensure consistent path handling
+
+## Minify Folder
+
+When developing ProcessWire modules I like to write my CSS as LESS, because it's very easy to namespace my classes:
+
+```LESS
+.my-module {
+  .foo {
+    border: 1px solid red;
+  }
+}
+```
+
+This ensures that elements with the class `.foo` will only have a red border if they are inside a `.my-module` wrapper. So if any other module also used the `.foo` class it would not get a red border.
+
+Often a module needs more than one CSS/JS file, so RockDevTools provides a single method to minify all files of a source folder and write them to a destination folder:
+
+```php
+if($config->rockdevtools) {
+  // minify all JS, LESS and CSS files in the /src folder
+  // and write them to the /dst folder
+  rockdevtools()->assets()->minify(
+    __DIR__ . '/src',
+    __DIR__ . '/dst',
+  );
+}
+```
+
+RockDevTools will only minify files that are newer than the destination file.
+
+Note that this will NOT merge files to a single file as this feature is intended for backend development.
+
+## Helpers
+
+### recursiveGlob()
+
+The `Assets::recursiveGlob()` static method provides a convenient way to find files recursively using glob patterns with the `**` syntax. This method is particularly useful when you need to find files in nested directories without manually specifying each level.
+
+#### Usage
+
+```php
+// Find all files recursively (default 3 levels deep)
+$files = Assets::recursiveGlob("/your/path/**");
+
+// Find all PHP files recursively (default 3 levels deep)
+$files = Assets::recursiveGlob("/your/path/**.php");
+
+// Find all CSS files recursively with custom depth (2 levels)
+$files = Assets::recursiveGlob("/your/path/**.css", 2);
+```
+
+#### Parameters
+
+- **`$pattern`** (string): The glob pattern to search for. Use `**` to indicate recursive search
+- **`$levels`** (int): The maximum depth of subdirectories to search (default: 3)
+
+#### How it works
+
+The method converts the `**` pattern into a PHP glob brace pattern. For example:
+- `"/foo/**"` with 3 levels becomes `"/foo/{*,*/*,*/*/*}"`
+- `"/foo/**.php"` with 2 levels becomes `"/foo/{*,*/*}.php"`
+
+## Debugging
+
+When working on JS/CSS assets it can sometimes be useful to recreate the minified files even if they are not newer than the destination file. To do that you can set the `debug` config option to `true`:
+
+```php
+rockdevtools()->debug = true;
+```
+
+This will force RockDevTools to recreate all asset files even if no changes have been made.
+
+If you want to check wheter certain files are watched or not the easiest way to find out is to check out the list on the module config screen.
+
+Another option is to dump the list of added files to the TracyDebugger bar:
+
+```php
+$devtools->assets()
+  ->less()
+  ->add('/site/templates/uikit/src/less/uikit.theme.less')
+  ->add('/site/templates/src/*.less')
+  ->add('/site/templates/RockPageBuilder/**/*.less')
+
+  // dump the list of added files to the TracyDebugger bar
+  ->bd()
+
+  ->save('/site/templates/src/.styles.css');
+```

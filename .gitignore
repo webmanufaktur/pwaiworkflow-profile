@@ -1,0 +1,13 @@
+# Local development
+.ddev/*
+!.ddev/config.yaml
+
+# Node modules
+node_modules
+
+# ProcessWire assets
+site/assets/cache/
+site/assets/logs/
+site/assets/sessions/
+/site/assets/backups/database/*
+!/site/assets/backups/database/clean-start.sql

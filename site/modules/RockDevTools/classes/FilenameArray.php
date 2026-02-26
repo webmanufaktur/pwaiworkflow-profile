@@ -1,0 +1,239 @@
+<?php
+
+namespace RockDevTools;
+
+use MatthiasMullie\Minify\Exceptions\IOException;
+use ProcessWire\FilenameArray as ProcessWireFilenameArray;
+use ProcessWire\WireException;
+use ProcessWire\WireFilesException;
+use ProcessWire\WirePermissionException;
+
+use function ProcessWire\rockdevtools;
+use function ProcessWire\wire;
+
+class FilenameArray extends ProcessWireFilenameArray
+{
+  private Assets $assets;
+
+  public function __construct(Assets $assets)
+  {
+    parent::__construct();
+    $this->assets = $assets;
+  }
+
+  /**
+   * Add a single file or multiple files via glob pattern.
+   *
+   * Adding a single file:
+   * rockdevtools()->js()->add('/path/to/file.js')
+   *
+   * Adding all files in a folder including subfolders:
+   * rockdevtools()->js()->add('/path/to/folder/**.js')
+   *
+   * Limit the depth of the globbing:
+   * rockdevtools()->js()->add('/path/to/folder/**', 2)
+   *
+   * @param string $filename
+   * @param int $levels
+   * @return $this
+   */
+  public function add($filename, int $levels = 3)
+  {
+    if (str_contains($filename, '*')) return $this->addAll($filename, $levels);
+    $filename = $this->assets->toPath($filename);
+    return parent::add($filename);
+  }
+
+  /**
+   * Add all files matching the glob to the array.
+   *
+   * Supports ** for recursive globbing!
+   *
+   * See docs for add() for more details.
+   *
+   * @param string $glob
+   * @return LessArray
+   * @throws WireException
+   * @throws WirePermissionException
+   */
+  public function addAll(string $glob, int $levels = 3): self
+  {
+    foreach ($this->recursiveGlob($glob, $levels) as $file) $this->add($file);
+    return $this;
+  }
+
+  public function append($filename)
+  {
+    $filename = $this->assets->toPath($filename);
+    return parent::append($filename);
+  }
+
+  /**
+   * Log current list of added files to the Tracy Debug Bar
+   */
+  public function bd(): self
+  {
+    try {
+      bd($this->data);
+    } catch (\Throwable $th) {
+    }
+    return $this;
+  }
+
+  public function __debugInfo()
+  {
+    return [
+      'files' => $this->data,
+    ];
+  }
+
+  /**
+   * Did the list of files in the array change? (file added or removed)
+   * @param string $dstFile
+   * @return bool
+   * @throws WireException
+   * @throws WirePermissionException
+   */
+  public function filesChanged(string $dstFile): bool
+  {
+    if (rockdevtools()->debug) return true;
+    $dstFile = $this->assets->toPath($dstFile);
+    $oldListHash = wire()->cache->get('rockdevtools-filenames-' . md5($dstFile));
+    if (!$oldListHash) return true;
+    return $oldListHash !== $this->filesListHash();
+  }
+
+  /**
+   * Get an md5 hash of the list of filenames.
+   * @return string
+   */
+  public function filesListHash(): string
+  {
+    return md5(implode(',', array_keys($this->data)));
+  }
+
+  /**
+   * Does the current list of files has any changes? This includes both
+   * changed files or a changed list of files (added/removed files).
+   *
+   * @param string $dstFile
+   * @return bool
+   * @throws WireException
+   * @throws WirePermissionException
+   */
+  public function hasChanges(string $dstFile): bool
+  {
+    if (rockdevtools()->debug) return true;
+    $dstFile = $this->assets->toPath($dstFile);
+
+    // if dst file does not exist, return true
+    if (!is_file($dstFile)) return true;
+
+    // did the list of files change?
+    // if yes, return true
+    if ($this->filesChanged($dstFile)) return true;
+
+    // if any of the files in the array is newer than the dst file, return true
+    foreach ($this as $filename) {
+      if (@filemtime($filename) > filemtime($dstFile)) return true;
+    }
+
+    // otherwise return false
+    return false;
+  }
+
+  public function prepend($filename)
+  {
+    $filename = $this->assets->toPath($filename);
+    return parent::prepend($filename);
+  }
+
+  /**
+   * Get list of files by glob pattern
+   *
+   * This also supports ** for recursive globbing!
+   *
+   * @param string $pattern
+   * @param int $levels
+   * @return array
+   */
+  public function recursiveGlob(string $pattern, int $levels = 3): array
+  {
+    $pattern = $this->assets->toPath($pattern);
+    return Assets::recursiveGlob($pattern, $levels);
+  }
+
+  /**
+   * Remove file or files (glob pattern) from the list
+   * @param string $file
+   */
+  public function remove($file): self
+  {
+    if (str_contains($file, '*')) {
+      $file = $this->recursiveGlob($file);
+      foreach ($file as $f) $this->remove($f);
+      return $this;
+    }
+    parent::remove($file);
+    return $this;
+  }
+
+  /**
+   * Generic save method that all asset types use. It will save a reference of
+   * the filelist to cache to keep track of added/removed files.
+   *
+   * @param string $to
+   * @param bool $onlyIfChanged
+   * @return FilenameArray
+   * @throws WireException
+   * @throws WirePermissionException
+   * @throws WireFilesException
+   * @throws IOException
+   */
+  public function save(
+    string $to,
+    bool $onlyIfChanged = true,
+    bool $sourceMap = false,
+    ?bool $minify = null,
+  ): self {
+    $dst = $this->assets->toPath($to);
+
+    // early exit if no changes
+    if ($onlyIfChanged && !$this->hasChanges($dst)) return $this;
+
+    // log to debug bar
+    if (function_exists('bd') && rockdevtools()->debugAssetTools) {
+      bd($this, "Compiling files to $to");
+    }
+
+    // make sure the folder exists
+    wire()->files->mkdir(dirname($dst), true);
+
+    if ($this instanceof LessArray) $this->saveLESS(
+      dst: $dst,
+      sourceMap: $sourceMap,
+      minify: $minify
+    );
+    if ($this instanceof ScssArray) $this->saveSCSS($dst, sourceMap: $sourceMap);
+    if ($this instanceof CssArray) $this->saveCSS($dst, $minify);
+    if ($this instanceof JsArray) $this->saveJS($dst, $minify);
+
+    $this->updateFilesListHash($dst);
+
+    return $this;
+  }
+
+  public function toArray(): array
+  {
+    return $this->data;
+  }
+
+  public function updateFilesListHash(string $dstFile): void
+  {
+    $dstFile = $this->assets->toPath($dstFile);
+    wire()->cache->save(
+      'rockdevtools-filenames-' . md5($dstFile),
+      $this->filesListHash()
+    );
+  }
+}
